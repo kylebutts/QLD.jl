@@ -13,14 +13,14 @@ include("gmm_qld.jl")
 include("attgt.jl")
 include("within_transform.jl")
 
-"GMM routine to estimate QLD"
+# "GMM routine to estimate QLD"
 export gmm_qld
 
 
-"Brown and Butts (2024) Within Transformation"
+# "Brown and Butts (2024) Within Transformation"
 export within_transform
 
-"Brown and Butts (2024) QLD Imputation Routine"
+# "Brown and Butts (2024) QLD Imputation Routine"
 export qld_imputation
 
 end # module QLD
