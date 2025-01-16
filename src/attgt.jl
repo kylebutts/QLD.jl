@@ -4,7 +4,7 @@ function estimate_tau_gt(
   T = size(ymat, 1)
   Fhat = [reshape(theta, T - p, p); -1.0 * I(p)]
   uniq_g_shift = sort(unique(g_shift))
-  uniq_g_shift = filter(x -> x .!== Inf, uniq_g_shift)
+  uniq_g_shift = filter(isfinite, uniq_g_shift)
 
   # Impute y0_hat
   y_diff = zeros(size(ymat))
@@ -13,10 +13,10 @@ function estimate_tau_gt(
 
   for (l, curr_g) in enumerate(uniq_g_shift)
     curr_idx = findall(g_shift .== curr_g) # All units with this g
-    Fhat_pre = Fhat[1:convert(Int64, curr_g), :]
+    Fhat_pre = Fhat[1:curr_g, :]
     PFhat = Fhat * ((Fhat_pre' * Fhat_pre) \ Fhat_pre')
     for i in curr_idx
-      y_diff[:, i] = ymat[:, i] - PFhat * ymat[1:convert(Int64, curr_g), i]
+      y_diff[:, i] = ymat[:, i] - PFhat * ymat[1:Int64(curr_g), i]
       tau_gt_hat[(1+((l-1)*T)):(l*T)] += y_diff[:, i]
       N_tau_gt[(1+((l-1)*T)):(l*T)] .+= 1
     end
@@ -36,16 +36,16 @@ function ms_tau_gt(
   T, N_units = size(ymat)
   Fhat = [reshape(theta, T - p, p); -1.0 * I(p)]
   uniq_g_shift = sort(unique(g_shift))
-  uniq_g_shift = filter(x -> x .!== Inf, uniq_g_shift)
+  uniq_g_shift = filter(isfinite, uniq_g_shift)
 
   # Impute y0_hat
   y_diff = zeros(eltype(theta), size(ymat, 1), size(ymat, 2))
   ms = zeros(eltype(theta), N_units, length(tau_gt))
   N_tau_gt = zeros(length(tau_gt))
   for (l, curr_g) in enumerate(uniq_g_shift)
-    curr_g = convert(Int64, curr_g)
+    curr_g = Int64(curr_g)
     curr_idx = findall(g_shift .== curr_g) # All units with this g
-    Fhat_pre = Fhat[1:convert(Int64, curr_g), :]
+    Fhat_pre = Fhat[1:curr_g, :]
     PFhat = Fhat * ((Fhat_pre' * Fhat_pre) \ Fhat_pre')
     for i in curr_idx
       y_diff[:, i] = ymat[:, i] - PFhat * ymat[1:curr_g, i]
@@ -69,16 +69,16 @@ function m_tau_gt_bar(
   T, N_units = size(ymat)
   Fhat = [reshape(theta, T - p, p); -1.0 * I(p)]
   uniq_g_shift = sort(unique(g_shift))
-  uniq_g_shift = filter(x -> x .!== Inf, uniq_g_shift)
+  uniq_g_shift = filter(isfinite, uniq_g_shift)
 
   # Impute y0_hat
   y_diff = zeros(eltype(theta), size(ymat, 1), size(ymat, 2))
   m_bar = zeros(eltype(theta), length(tau_gt))
   N_tau_gt = zeros(length(tau_gt))
   for (l, curr_g) in enumerate(uniq_g_shift)
-    curr_g = convert(Int64, curr_g)
+    curr_g = Int64(curr_g)
     curr_idx = findall(g_shift .== curr_g) # All units with this g
-    Fhat_pre = Fhat[1:convert(Int64, curr_g), :]
+    Fhat_pre = Fhat[1:curr_g, :]
     PFhat = Fhat * ((Fhat_pre' * Fhat_pre) \ Fhat_pre')
     for i in curr_idx
       y_diff[:, i] = ymat[:, i] - PFhat * ymat[1:curr_g, i]

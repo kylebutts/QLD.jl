@@ -28,14 +28,14 @@ function qld_imputation(
   uniq_g = unique(g)
   T = length(uniq_t)
   T_0 = minimum(uniq_g) - 1
-  N_pre = count(x -> x .<= T_0, uniq_t)
+  N_pre = count(<=(T_0), uniq_t)
 
   min_t = minimum(t)
   g_shift = (g.-min_t)[t.==min_t]
-  uniq_g_shift = unique(g_shift[g_shift.!==Inf])
+  uniq_g_shift = unique(g_shift[isfinite.(g_shift)])
   rel_year = t - g
-  uniq_rel_years = unique(rel_year[rel_year.!==-Inf])
-  uniq_rel_years = sort(uniq_rel_years)
+  uniq_rel_years = unique(rel_year[isfinite.(rel_year)])
+  sort!(uniq_rel_years)
 
   N_units = length(unique(id))
   idx_control = findall(g_shift .== Inf)
@@ -48,15 +48,15 @@ function qld_imputation(
   # k = 0
 
   p = convert(Int64, p)
-  @assert p >= -1 "`p` must be an integer >= 0. If you want to select p based on the data, use `p = -1`"
-  @assert p <= N_pre - 1 "`p` must be smaller than the number of time periods before *any* unit is treated"
-  @assert p <= N_instruments "The number of instruments must be >= `p`"
-  @assert type ∈ ["gt", "dynamic", "overall"] "Three options: \"gt\", \"dynamic\" and \"overall\""
-  @assert minimum(g_shift) > p
+  p >= -1 || error("`p` must be an integer >= 0. If you want to select p based on the data, use `p = -1`")
+  p <= N_pre - 1 || error("`p` must be smaller than the number of time periods before *any* unit is treated")
+  p <= N_instruments || error("The number of instruments must be >= `p`")
+  type ∈ ["gt", "dynamic", "overall"] || error("Three options: \"gt\", \"dynamic\" and \"overall\"")
+  minimum(g_shift) > p || error("`p` must be smaller than the length of the shortest pre-treatment period")
 
   # T x N matrix of $y_{it}$
   ymat = reshape(y, T, N_units)
-  if do_within_transform == true
+  if do_within_transform
     ymat = within_transform(ymat, idx_control, N_pre)
   end
 
