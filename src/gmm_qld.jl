@@ -115,11 +115,19 @@ function gmm_qld(ymat, W, p)
 
   # each column consists of \sum_i y_{it} ⊗ w_i for each t
   # multiplied by 1/N to keep from having to do this every time `m_theta_bar` is estimated
-  ymat_W = ymat * W / N_units
+  ymat_W = (ymat * W) / N_units
 
   ## First stage ----
   theta_initial = ones((T - p) * p)
   weight = Matrix(1.0 * I((T - p) * N_instruments))
+
+  # mbar = m_theta_bar_fast(theta_initial, p, ymat_W)
+  # @show mbar[:, 1]
+  # Mbar_initial = ForwardDiff.jacobian(
+  #   x -> vec(transpose(m_theta_bar_fast(x, p, ymat_W))), theta_initial
+  # )
+  # @show Mbar_initial[:, 1]
+
   if p > 0
     optres = Optim.optimize(
       x -> obj_theta(x, weight, p, ymat_W),

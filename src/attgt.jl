@@ -13,7 +13,7 @@ function estimate_tau_gt(
 
   for (l, curr_g) in enumerate(uniq_g_shift)
     curr_idx = findall(g_shift .== curr_g) # All units with this g
-    Fhat_pre = Fhat[1:curr_g, :]
+    Fhat_pre = Fhat[1:Int(curr_g), :]
     PFhat = Fhat * ((Fhat_pre' * Fhat_pre) \ Fhat_pre')
     for i in curr_idx
       y_diff[:, i] = ymat[:, i] - PFhat * ymat[1:Int64(curr_g), i]
