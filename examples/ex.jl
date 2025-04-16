@@ -9,15 +9,31 @@ using Optim
 using LineSearches
 using ForwardDiff
 
-# ]dev ~/Documents/repos/QLD/
+using Revise
+
+# using Pkg; Pkg.develop("~/Documents/repos/QLD")
 using QLD
 
 df = DataFrame(
   CSV.File("examples/df_ex_factor.csv")
 )
 
-using BenchmarkTools
-@btime res = QLD.qld_imputation(
+res_overall = qld_imputation(
+  df;
+  y=:y,
+  id=:id,
+  t=:t,
+  g=:g,
+  W=[
+    :W1,
+    :W2,
+  ],
+  do_within_transform=false,
+  p=-1,
+  type="overall",
+)
+
+res = qld_imputation(
   df;
   y=:y,
   id=:id,
@@ -30,4 +46,21 @@ using BenchmarkTools
   do_within_transform=false,
   p=-1,
   type="dynamic",
-);
+)
+
+res_uniform_cb = qld_imputation(
+  df;
+  y=:y,
+  id=:id,
+  t=:t,
+  g=:g,
+  W=[
+    :W1,
+    :W2,
+  ],
+  do_within_transform=false,
+  p=-1,
+  type="dynamic",
+  vcov_type="uniform"
+)
+
