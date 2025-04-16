@@ -9,8 +9,10 @@ function qld_imputation(
   p::Union{Int64,Real},
   type::String="dynamic",
   return_y0::Bool=false,
-  return_naive_se::Bool=false,
+  vcov_type="analytic"
 )
+  @assert vcov_type in ["analytic", "uniform", "naive"] "vcov_type must be one of 'analytic', 'uniform', or 'naive'"
+
   #
   DataFrames.sort!(df, [g, id, t])
 
@@ -33,10 +35,10 @@ function qld_imputation(
   N_pre = count(x -> x .<= T_0, uniq_t)
 
   min_t = minimum(t)
-  g_shift = (g .- min_t)[t .== min_t]
-  uniq_g_shift = unique(g_shift[g_shift .!== Inf])
+  g_shift = (g.-min_t)[t.==min_t]
+  uniq_g_shift = unique(g_shift[g_shift.!==Inf])
   rel_year = t - g
-  uniq_rel_years = unique(rel_year[rel_year .!== -Inf])
+  uniq_rel_years = unique(rel_year[rel_year.!==-Inf])
   uniq_rel_years = sort(uniq_rel_years)
 
   N = length(unique(id))
@@ -44,17 +46,20 @@ function qld_imputation(
   N_inf = length(idx_control)
 
   N_tau_gt = zeros(T * length(uniq_g_shift))
+  gt_index = zeros(T * length(uniq_g_shift), 2)
   for (l, curr_g) in enumerate(uniq_g_shift)
     curr_g = convert(Int64, curr_g)
     curr_idx = findall(g_shift .== curr_g) # All units with this g
     for i in curr_idx
-      gt_idx = (1 + ((l - 1) * T)):(l * T)
-      N_tau_gt[gt_idx] .+= 1
+      g_idx = (1+((l-1)*T)):(l*T)
+      N_tau_gt[g_idx] .+= 1
+      gt_index[g_idx, 1] .= curr_g + min_t
+      gt_index[g_idx, 2] .= uniq_t
     end
   end
 
   # N x L matrix of instruments
-  W = df[t .== min_t, W]
+  W = df[t.==min_t, W]
   if (ndims(W) == 1)
     W = reshape(W, length(W), 1)
   else
@@ -114,7 +119,7 @@ function qld_imputation(
 
   # Estimate τ(g,t) parameters
   # ----
-  tau_gt_hat, N_tau_gt = estimate_tau_gt(theta_hat_opt, p, ymat, g_shift)
+  tau_gt_hat, _ = estimate_tau_gt(theta_hat_opt, p, ymat, g_shift)
 
   # Estimate VCOV of τ(g,t) 
   # ----
@@ -123,7 +128,7 @@ function qld_imputation(
   gs = ms_tau_gt(theta_hat_opt, tau_gt_hat, p, ymat, g_shift)
 
   Gbar_theta = ForwardDiff.jacobian(
-    x -> mean(ms_tau_gt(x, tau_gt_hat, p, ymat, g_shift); dims=1), theta_hat_opt
+    x -> mean(ms_tau_gt(x, tau_gt_hat, p, ymat, g_shift); dims=1), theta_hat_opt,
   )
   # Gbar_tau = -1 * I(length(tau_gt_hat))
   # Gbar_tau = ForwardDiff.jacobian(
@@ -138,15 +143,28 @@ function qld_imputation(
     W_opt *
     (1 / sqrt(N) * ms)
 
-  vcov_tau_gt_naive = 1 / N * (IF_tau * IF_tau')
-  vcov_tau_gt = 1 / N * (IF_theta + IF_tau) * (IF_theta + IF_tau)'
-
+  if vcov_type == "naive"
+    IF = IF_tau
+  else
+    IF = IF_tau + IF_theta
+  end
 
   # Aggregate effects if needed
+  ret = Dict(:vcov_type => vcov_type, :selected_p => p)
+
   if type == "gt"
-    ret = (estimate=tau_gt_hat, vcov=vcov_tau_gt, selected_p=p)
-    if return_naive_se
-      ret = merge(ret, (vcov_naive=vcov_tau_gt_naive,))
+    ret[:gt_index] = gt_index
+    ret[:N_tau_gt] = N_tau_gt
+    ret[:estimate] = tau_gt_hat
+    ret[:inf_func] = IF
+
+    if vcov_type == "uniform"
+      se_tau_gt, crit_val_tau_gt = mboot(1 / sqrt(N) * IF')
+      ret[:se] = se_tau_gt
+      ret[:crit_val] = crit_val_tau_gt
+    else
+      vcov_tau_gt = 1 / N * (IF * IF')
+      ret[:vcov] = vcov_tau_gt
     end
   elseif type == "dynamic"
     # aggte to dynamic ATT (event-study)
@@ -161,13 +179,19 @@ function qld_imputation(
     end
     # Normalize each row by the row's sum
     mat_agg_es = mat_agg_es ./ sum(mat_agg_es; dims=2)
-    tau_es_hat = mat_agg_es * tau_gt_hat
-    vcov_tau_es = mat_agg_es * vcov_tau_gt * mat_agg_es'
-    vcov_tau_es_naive = mat_agg_es * vcov_tau_gt_naive * mat_agg_es'
 
-    ret = (rel_year=uniq_rel_years, estimate=tau_es_hat, vcov=vcov_tau_es, selected_p=p)
-    if return_naive_se
-      ret = merge(ret, (vcov_naive=vcov_tau_es_naive,))
+    IF_es = mat_agg_es * IF
+    tau_es_hat = mat_agg_es * tau_gt_hat
+    ret[:rel_year] = uniq_rel_years
+    ret[:estimate] = tau_es_hat
+
+    if vcov_type == "uniform"
+      se_tau_es, crit_val_tau_es = mboot(1 / sqrt(N) * IF_es')
+      ret[:se] = se_tau_es
+      ret[:crit_val] = crit_val_tau_es
+    else
+      vcov_tau_es = 1 / N * (IF_es * IF_es')
+      ret[:vcov] = vcov_tau_es
     end
   elseif type == "overall"
     # aggte to overall ATT
@@ -181,16 +205,20 @@ function qld_imputation(
         i += 1
       end
     end
-
     # Normalize each row by the row's sum
     mat_agg_overall = mat_agg_overall ./ sum(mat_agg_overall; dims=2)
-    tau_overall_hat = mat_agg_overall * tau_gt_hat
-    vcov_tau_overall = mat_agg_overall * vcov_tau_gt * mat_agg_overall'
-    vcov_tau_overall_naive = mat_agg_overall * vcov_tau_gt_naive * mat_agg_overall'
 
-    ret = (estimate=tau_overall_hat, vcov=vcov_tau_overall, selected_p=p)
-    if return_naive_se
-      ret = merge(ret, (vcov_naive=vcov_tau_overall_naive,))
+    IF_overall = mat_agg_overall * IF
+    tau_overall_hat = mat_agg_overall * tau_gt_hat
+    ret[:estimate] = tau_overall_hat
+
+    if vcov_type == "uniform"
+      se_tau_overall, crit_val_tau_overall = mboot(1 / sqrt(N) * IF_overall')
+      ret[:se] = se_tau_overall
+      ret[:crit_val] = crit_val_tau_overall
+    else
+      vcov_tau_overall = 1 / N * (IF_overall * IF_overall')
+      ret[:vcov] = vcov_tau_overall
     end
   end
 
@@ -203,7 +231,7 @@ function qld_imputation(
       impute_df.y0_hat = vec(impute_y0(theta_hat_opt, p, ymat, g_shift))
       impute_df.y = vec(ymat)
     end
-    ret = merge(ret, (impute_df=impute_df,))
+    ret[:impute_df] = impute_df
   end
 
   return ret
