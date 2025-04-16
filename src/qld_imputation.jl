@@ -1,3 +1,45 @@
+"""
+    qld_imputation(df; y, id, t, g, W, do_within_transform, p, type="dynamic", return_y0=false, vcov_type="pointwise")
+
+Estimate treatment effects using Quasi-Long Differencing (QLD) imputation method for panel data with staggered adoption.
+
+# Arguments
+- `df`: A DataFrame containing the panel data.
+- `y::Union{String,Symbol}`: The outcome variable name.
+- `id::Union{String,Symbol}`: The unit identifier variable name.
+- `t::Union{String,Symbol}`: The time period variable name.
+- `g::Union{String,Symbol}`: The treatment group variable name (timing of treatment). Units never treated should have `g` set to `Inf`.
+- `W::Union{String,Symbol,Vector{String},Vector{Symbol}}`: Variable(s) to use as instruments.
+- `do_within_transform::Bool`: Whether to apply within-unit transformation to the outcome variable.
+- `p::Union{Int64,Real}`: Number of factors to use in the model. If `p = -1`, the number of factors is selected based on Hansen-Sargent statistic.
+- `type::String="dynamic"`: The type of treatment effect to estimate:
+  - `"gt"`: Group-time specific treatment effects.
+  - `"dynamic"`: Event study effects relative to treatment timing.
+  - `"overall"`: Overall average treatment effect.
+- `return_y0::Bool=false`: Whether to return the imputed counterfactual outcomes.
+- `vcov_type::String="pointwise"`: The type of variance-covariance matrix to compute:
+  - `"pointwise"`: Standard pointwise asymptotic inference.
+  - `"uniform"`: Multiplier bootstrap for sup-t uniform inference.
+  - `"naive"`: Naive standard errors ignoring first-stage estimation.
+
+# Returns
+A Dictionary containing:
+- `:estimate`: The estimated treatment effects.
+- `:vcov_type`: The type of variance-covariance matrix computed.
+- `:selected_p`: The number of factors used.
+
+Additional returned elements depend on `vcov_type` and `type`:
+- If `vcov_type = "uniform"`: `:se` (standard errors) and `:crit_val` (critical values).
+- If `vcov_type = "pointwise"` or `"naive"`: `:vcov` (variance-covariance matrix).
+- If `type = "gt"`: `:gt_index` (group-time indices) and `:N_tau_gt` (number of units for each group-time pair).
+- If `type = "dynamic"`: `:rel_year` (relative years to treatment).
+- If `return_y0 = true`: `:impute_df` (DataFrame with imputed counterfactual outcomes).
+
+# Notes
+- Requires a balanced panel.
+- Treatment timing must be strictly after period `p` for all treated units.
+- The number of instruments must be at least `p`.
+"""
 function qld_imputation(
   df;
   y::Union{String,Symbol},
@@ -9,9 +51,9 @@ function qld_imputation(
   p::Union{Int64,Real},
   type::String="dynamic",
   return_y0::Bool=false,
-  vcov_type="analytic"
+  vcov_type="pointwise"
 )
-  @assert vcov_type in ["analytic", "uniform", "naive"] "vcov_type must be one of 'analytic', 'uniform', or 'naive'"
+  @assert vcov_type in ["pointwise", "uniform", "naive"] "vcov_type must be one of 'pointwise', 'uniform', or 'naive'"
 
   #
   DataFrames.sort!(df, [g, id, t])
@@ -184,6 +226,7 @@ function qld_imputation(
     tau_es_hat = mat_agg_es * tau_gt_hat
     ret[:rel_year] = uniq_rel_years
     ret[:estimate] = tau_es_hat
+    ret[:inf_func] = IF_es
 
     if vcov_type == "uniform"
       se_tau_es, crit_val_tau_es = mboot(1 / sqrt(N) * IF_es')
@@ -211,6 +254,7 @@ function qld_imputation(
     IF_overall = mat_agg_overall * IF
     tau_overall_hat = mat_agg_overall * tau_gt_hat
     ret[:estimate] = tau_overall_hat
+    ret[:inf_func] = IF_overall
 
     if vcov_type == "uniform"
       se_tau_overall, crit_val_tau_overall = mboot(1 / sqrt(N) * IF_overall')

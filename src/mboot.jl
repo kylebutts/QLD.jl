@@ -53,20 +53,14 @@ function mboot(IF::AbstractMatrix{<:Real}, B::Integer=1000; level::Real=0.95)
 
   # Calculate Bootstrap standard errors using IQR method
   se_bs = Vector{Float64}(undef, K)
-  qnorm_diff = quantile(Normal(), 0.75) - quantile(Normal(), 0.25)
+  qnorm_diff = quantile(Distributions.Normal(), 0.75) - quantile(Distributions.Normal(), 0.25)
   for k in 1:K
-    # Extract column k
-    col_k = @view bs_ests[:, k]
-
-    # Calculate quantiles, handling potential NaNs (though unlikely here)
-    q75 = quantile(col_k, 0.75)
-    q25 = quantile(col_k, 0.25)
+    q75 = quantile(bs_ests[:, k], 0.75)
+    q25 = quantile(bs_ests[:, k], 0.25)
     se_bs[k] = (q75 - q25) / qnorm_diff
   end
 
-  # Calculate absolute t-statistics
-  # Need to transpose se_bs to broadcast correctly (B x K ./ 1 x K)
-  # Check for NaNs in se_bs before division
+  # Calculate absolute t-statistics for each draw
   max_abs_t_stats_per_draw = Vector{Float64}(undef, B)
   for b in 1:B
     max_abs_t_stats_per_draw[b] = maximum(abs.(bs_ests[b, :] ./ se_bs))
